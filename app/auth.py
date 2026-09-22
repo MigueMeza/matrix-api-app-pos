@@ -39,7 +39,8 @@ def requiere_rol(*roles):
 def turno_required(view):
     """Verifica que exista un turno de caja abierto asociado a la sesión.
 
-    Si el turno es válido, lo asigna a g.turno. De lo contrario, retorna 400/401.
+    Si el turno es válido, lo asigna a g.turno. De lo contrario, retorna 401: para la
+    terminal equivale a una sesión inválida (el cliente regresa al login).
     """
 
     @wraps(view)
@@ -68,7 +69,7 @@ def turno_required(view):
             return jsonify({
                 "error": "Caja cerrada.",
                 "mensaje": "No hay una caja abierta para esta sesión. Pide a un supervisor o admin que la abra."
-            }), 400
+            }), 401
 
         g.turno = turno
         return view(*args, **kwargs)
