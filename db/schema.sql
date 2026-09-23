@@ -42,10 +42,24 @@ CREATE TABLE productos (
     nombre VARCHAR(150) NOT NULL,
     talla VARCHAR(20) NULL,
     color VARCHAR(50) NULL,
-    precio DECIMAL(10,2) NOT NULL,
+    precio DECIMAL(10,2) NOT NULL,                -- precio de venta
+    precio_compra DECIMAL(10,2) NULL,             -- cuánto le costó a la tienda
+    precio_publico_proveedor DECIMAL(10,2) NULL,  -- a cuánto lo vende el proveedor al público (opcional)
     codigo_barras VARCHAR(100) NULL UNIQUE,
     activo TINYINT(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- configuracion (valores del negocio editables desde /admin)
+-- ------------------------------------------------------------
+-- margen_precio_sugerido: precio sugerido = precio de compra + este monto.
+CREATE TABLE configuracion (
+    clave VARCHAR(50) PRIMARY KEY,
+    valor VARCHAR(255) NOT NULL,
+    actualizado DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO configuracion (clave, valor) VALUES ('margen_precio_sugerido', '120');
 
 -- ------------------------------------------------------------
 -- 4. inventarios (stock por tienda + producto)

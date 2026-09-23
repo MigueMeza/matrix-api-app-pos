@@ -177,9 +177,14 @@ erDiagram
 | columna | tipo | descripción |
 |---|---|---|
 | id | PK | |
-| nombre, talla, color, precio | | |
+| nombre, talla, color | | |
+| precio | decimal | **precio de venta** |
+| precio_compra | decimal, nullable | cuánto le costó a la tienda (los productos anteriores a la migración 003 no lo tienen) |
+| precio_publico_proveedor | decimal, nullable | opcional: a cuánto lo vende el proveedor a sus clientes minoristas |
 | codigo_barras | único, nullable | se busca por aquí en el punto de venta |
 | activo | bool | un producto descontinuado deja de aparecer en ventas/inventario |
+
+**`configuracion`** — valores del negocio que el admin cambia sin tocar código (`clave`, `valor`). `margen_precio_sugerido` (inicia en 120): en el ingreso de mercancía, **precio sugerido = precio de compra + margen**; el sugerido llena el precio de venta y ambos son editables. Se cambia con `PUT /admin/configuracion/margen` y aplica a los ingresos siguientes. El ingreso se registra con `POST /admin/productos/ingreso/lote`: da de alta los productos nuevos, a los existentes (mismo código) les suma piezas y actualiza precios, y si un renglón es inválido no guarda nada del lote.
 
 **`inventarios`** — stock de cada producto **por tienda** (una fila por combinación tienda+producto).
 | columna | tipo | descripción |

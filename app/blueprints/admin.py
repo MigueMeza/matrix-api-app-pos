@@ -43,167 +43,16 @@ def login():
     session["rol"] = usuario["rol"]
     session["contexto"] = "admin"
 
-    return jsonify(mensaje="Login de administrador exitoso.", usuario_id=usuario["id"]), 200
+    return jsonify(
+        mensaje="Login de administrador exitoso.",
+        usuario_id=usuario["id"],
+        usuario={"id": usuario["id"], "nombre": usuario["nombre"], "rol": usuario["rol"]},
+    ), 200
 
 
 def _tiendas_activas(cursor):
     cursor.execute("SELECT id, nombre FROM tiendas WHERE activo = 1 ORDER BY nombre")
     return cursor.fetchall()
-
-
-@admin_bp.route("/", methods=["GET"])
-def dashboard():
-    with db_cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) AS n FROM tiendas WHERE activo = 1")
-        tiendas_activas = cursor.fetchone()["n"]
-
-        cursor.execute("SELECT COUNT(*) AS n FROM productos WHERE activo = 1")
-        productos_activos = cursor.fetchone()["n"]
-
-        cursor.execute("SELECT COUNT(*) AS n FROM usuarios WHERE rol = %s AND activo = 1", (Rol.VENDEDOR.value,))
-        vendedores_activos = cursor.fetchone()["n"]
-
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(i.cantidad * p.precio), 0) AS valor
-            FROM inventarios i JOIN productos p ON p.id = i.producto_id
-            """
-        )
-        valor_inventario = float(cursor.fetchone()["valor"])
-
-        cursor.execute("SELECT COUNT(*) AS n FROM turnos_caja WHERE estado = 'abierto'")
-        turnos_abiertos = cursor.fetchone()["n"]
-
-        cursor.execute("SELECT COUNT(*) AS n FROM pedidos WHERE estado = 'pendiente'")
-        pedidos_pendientes = cursor.fetchone()["n"]
-
-    return jsonify(
-        tiendas_activas=tiendas_activas,
-        productos_activos=productos_activos,
-        vendedores_activos=vendedores_activos,
-        valor_inventario=valor_inventario,
-        turnos_abiertos=turnos_abiertos,
-        pedidos_pendientes=pedidos_pendientes,
-    ), 200
-
-
-@admin_bp.route("/productos", methods=["GET"])
-def productos_listar():
-    tienda_id = request.args.get("tienda_id", type=int, default=0)
-    buscar = request.args.get("buscar", "").strip()
-
-    with db_cursor() as cursor:
-        tiendas = _tiendas_activas(cursor)
-
-        sql = """
-            SELECT p.id AS producto_id, i.id AS inventario_id, p.nombre, p.talla, p.color,
-                   p.precio, i.cantidad, t.nombre AS tienda
-            FROM inventarios i
-            JOIN productos p ON p.id = i.producto_id
-            JOIN tiendas t ON t.id = i.tienda_id
-            WHERE 1=1
-        """
-        parametros = []
-        if tienda_id != 0:
-            sql += " AND i.tienda_id = %s"
-            parametros.append(tienda_id)
-        if buscar:
-            sql += " AND p.nombre LIKE %s"
-            parametros.append(f"%{buscar}%")
-        sql += " ORDER BY p.nombre"
-
-        cursor.execute(sql, parametros)
-        inventario = cursor.fetchall()
-
-    for item in inventario:
-        item["precio"] = float(item["precio"])
-
-    return jsonify(tiendas=tiendas, tienda_id_seleccionada=tienda_id, inventario=inventario), 200
-
-
-@admin_bp.route("/productos/buscar_por_codigo", methods=["GET"])
-def productos_buscar_por_codigo():
-    codigo_barras = request.args.get("codigo_barras", "").strip()
-
-    if not codigo_barras:
-        return jsonify(encontrado=False), 200
-
-    with db_cursor() as cursor:
-        cursor.execute(
-            "SELECT nombre, talla, color, precio FROM productos WHERE codigo_barras = %s",
-            (codigo_barras,),
-        )
-        producto = cursor.fetchone()
-
-    if not producto:
-        return jsonify(encontrado=False), 200
-
-    return jsonify(
-        encontrado=True,
-        nombre=producto["nombre"],
-        talla=producto["talla"],
-        color=producto["color"],
-        precio=float(producto["precio"]),
-    ), 200
-
-
-@admin_bp.route("/productos/ingreso/lote", methods=["POST"])
-def productos_ingreso_guardar_lote():
-    datos = request.get_json(silent=True) or {}
-    items = datos.get("items", [])
-
-    if not items:
-        return jsonify(error="No se enviaron ítems para procesar."), 400
-
-    with db_cursor(commit=True) as cursor:
-        for item in items:
-            codigo_barras = (item.get("codigo_barras") or "").strip()
-            tienda_id = int(item.get("tienda_id"))
-            cantidad = int(item.get("cantidad"))
-
-            cursor.execute("SELECT id FROM productos WHERE codigo_barras = %s", (codigo_barras,))
-            producto = cursor.fetchone()
-
-            if producto:
-                producto_id = producto["id"]
-            else:
-                nombre = (item.get("nombre") or "").strip()
-                talla = (item.get("talla") or "").strip() or None
-                color = (item.get("color") or "").strip() or None
-                precio = float(item.get("precio"))
-                cursor.execute(
-                    """
-                    INSERT INTO productos (nombre, talla, color, precio, codigo_barras)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (nombre, talla, color, precio, codigo_barras),
-                )
-                producto_id = cursor.lastrowid
-
-            cursor.execute(
-                """
-                INSERT INTO inventarios (tienda_id, producto_id, cantidad)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE cantidad = cantidad + VALUES(cantidad)
-                """,
-                (tienda_id, producto_id, cantidad),
-            )
-
-    return jsonify(mensaje="Lote de productos procesado exitosamente."), 200
-
-
-@admin_bp.route("/inventarios/<int:id>", methods=["PUT"])
-def inventario_editar(id):
-    datos = request.get_json(silent=True) or {}
-    cantidad = datos.get("cantidad")
-
-    if cantidad is None:
-        return jsonify(error="Debes proporcionar la nueva cantidad."), 400
-
-    with db_cursor(commit=True) as cursor:
-        cursor.execute("UPDATE inventarios SET cantidad = %s WHERE id = %s", (cantidad, id))
-
-    return jsonify(mensaje="Inventario actualizado."), 200
 
 
 @admin_bp.route("/inventarios/<int:id>", methods=["DELETE"])
@@ -490,3 +339,8 @@ def apartados_devolver_inventario(apartado_id):
         mensaje="La mercancía del apartado regresó al inventario de la tienda.",
         estado=estado,
     ), 200
+
+
+# Resumen de inicio, ingreso de mercancía y consulta de ventas: viven en su propio módulo pero registran sus rutas en admin_bp.
+# Se importa al final porque necesita admin_bp ya definido.
+from . import admin_inventario, admin_resumen, admin_ventas  # noqa: E402,F401
