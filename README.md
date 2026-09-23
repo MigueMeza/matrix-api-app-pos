@@ -57,7 +57,7 @@ matrix/
 │   │   ├── auth.py          # /login, /logout — solo super_admin y supervisor
 │   │   ├── caja.py          # /caja/abrir, /caja/corte (apertura y cierre de turno)
 │   │   ├── productos.py     # /productos — inventario de solo lectura (POS, turno abierto)
-│   │   ├── apartados.py     # /apartados — ver y abonar (POS, turno abierto)
+│   │   ├── apartados.py     # /apartados — ver, crear, abonar y entregar (POS, turno abierto)
 │   │   ├── pedidos.py       # /pedidos — ver, crear y convertir a venta/apartado (POS, turno abierto)
 │   │   ├── ventas.py        # /ventas, /ventas/buscar, /ventas/finalizar (POS, turno abierto)
 │   │   └── admin.py         # /admin/* — dashboard, productos, usuarios, tiendas, pedidos, apartados (solo super_admin)
@@ -216,7 +216,7 @@ erDiagram
 
 **`clientes`** — catálogo global de clientes (no pertenecen a una tienda en particular), usado por apartados y pedidos.
 
-**`apartados`** — cabecera de un apartado (producto físicamente en tienda, retenido para un cliente). Estados: `activo`, `liquidado`, `cancelado`, `vencido`. El vencimiento a 3 meses se calcula al vuelo en `v_apartados_resumen`, no cambia `estado` por sí solo.
+**`apartados`** — cabecera de un apartado (producto físicamente en tienda, retenido para un cliente). Al apartar, las piezas **salen del inventario** de la tienda. Estados: `activo`, `liquidado` (pagado, sin entregar), `entregado` (`fecha_entrega`), `cancelado`, `vencido` (estos dos solo los pone `/admin`). En el POS se ven como **vigente** (≤ 3 meses desde `fecha_creacion`), **expirado** (> 3 meses: ya no admite abonos ni entrega, lo revisa un administrador), **entregado** o cancelado; la vigencia se calcula al consultar, no cambia `estado` por sí sola. Los registros no se eliminan desde el POS.
 
 **`apartado_detalles`** — productos incluidos en el apartado (misma lógica de `subtotal` generado que `detalle_ventas`).
 
@@ -224,9 +224,9 @@ erDiagram
 
 **`v_apartados_resumen`** — vista de solo lectura que junta cada apartado con su cliente, total abonado, saldo pendiente y dos banderas calculadas (`mayor_a_3_meses`, `vencido_por_fecha_limite`).
 
-**`pedidos`** — cabecera de un pedido (mercancía que la tienda no tiene y va a conseguir con el proveedor para un cliente). Estados: `pendiente` → `disponible` → `entregado`, o `cancelado` en cualquier punto antes de `entregado`. Solo `/admin` puede mover `pendiente → disponible` (acredita el inventario de la tienda) o cancelar. Un pedido `disponible` se convierte en una venta o un apartado desde el POS — `venta_id`/`apartado_id` (mutuamente excluyentes, `CHECK`) registran en cuál, y el estado pasa a `entregado`.
+**`pedidos`** — cabecera de un pedido (mercancía que la tienda no tiene y va a conseguir con el proveedor para un cliente). Estados: `pendiente` → `disponible` → `entregado`, o `cancelado` en cualquier punto antes de `entregado`. Solo `/admin` puede mover `pendiente → disponible` o cancelar. **La mercancía de un pedido no entra al inventario**: al llegar queda reservada para el cliente (si entrara, una venta normal podría llevársela). Por eso entregarlo como venta no descuenta existencias, y cancelar un pedido `disponible` sí suma sus piezas al inventario de la tienda para que se puedan vender. Un pedido `disponible` se convierte en una venta o un apartado desde el POS — `venta_id`/`apartado_id` (mutuamente excluyentes, `CHECK`) registran en cuál, y el estado pasa a `entregado`.
 
-**`pedido_detalles`** — productos solicitados en el pedido (deben existir ya en el catálogo `productos`).
+**`pedido_detalles`** — productos solicitados en el pedido. Cada línea es **del catálogo** (`producto_id`) o **fuera de catálogo**: el cajero solo conoce una descripción genérica y la talla porque la prenda viene del catálogo del proveedor (`producto_id` NULL, `descripcion`, `talla`). Ambas pueden llevar un `comentario` ("puede ser roja o negra"). Cuando llega la mercancía, `/admin` asigna cada línea fuera de catálogo a un producto real con `PUT /admin/pedidos/<id>/detalles/<detalle_id>` (si no existe, primero se da de alta); hasta entonces el pedido no puede marcarse `disponible`, porque sin producto no hay precio para cobrarlo. Cambio aplicado con `db/migraciones/001_pedidos_fuera_de_catalogo.sql`.
 
 ## Rutas principales
 
@@ -239,7 +239,7 @@ erDiagram
 | `/ventas`, `/ventas/buscar`, `/ventas/buscar_nombre`, `/ventas/finalizar` | ventas | turno abierto | pantalla de venta: buscar producto por código de barras o por nombre, cobrar, descontar inventario |
 | `/productos` | productos | turno abierto | inventario de solo lectura, mismo listado para los 3 roles |
 | `/pedidos`, `/pedidos/nuevo`, `/pedidos/<id>/convertir_venta`, `/pedidos/<id>/convertir_apartado` | pedidos | turno abierto | ver, registrar y convertir pedidos `disponible` en venta o apartado |
-| `/apartados`, `/apartados/<id>/abonar` | apartados | turno abierto | ver apartados y registrar abonos |
+| `/apartados` (GET, POST), `/apartados/<id>/abonar`, `/apartados/<id>/entregar` | apartados | turno abierto | ver apartados (con productos y abonos), apartar productos con anticipo opcional, abonar (en cualquier tienda) y entregar (solo en su tienda; cobra el saldo, con cambio si es en efectivo) |
 | `/admin/*` | admin | super_admin | dashboard, alta/edición de productos e inventario, alta/baja de usuarios y tiendas, aprobar/cancelar pedidos, ver apartados |
 
 ## Datos de prueba (solo entorno de desarrollo)
@@ -255,9 +255,8 @@ Los vendedores de prueba (`cajero_centro`, `cajero_norte`) no tienen contraseña
 
 ## Simplificaciones deliberadas (pendientes de revisar con negocio)
 
-- **`pedidos.convertir_venta`** cobra el total en un solo pago de efectivo — no reutiliza el carrito interactivo de `ventas.html` con pagos mixtos. Si se necesita cobrar un pedido con métodos combinados, esa pantalla hay que integrarla.
 - **`pedidos.convertir_apartado`** crea el apartado con `anticipo_requerido = 0` y `fecha_limite` a 3 meses fijos — no pide esos datos en el momento.
-- La conversión de un pedido a venta/apartado solo se permite desde una terminal cuyo turno sea de la **misma tienda** que el pedido (el inventario que se acreditó y se va a descontar vive ahí) — si se intenta desde otra tienda, se rechaza con un mensaje.
+- La conversión de un pedido a venta/apartado solo se permite desde una terminal cuyo turno sea de la **misma tienda** que el pedido (la mercancía reservada está físicamente ahí) — si se intenta desde otra tienda, se rechaza con un mensaje.
 - No hay pantalla para dar de alta/editar `clientes` de forma independiente; se crean sobre la marcha al registrar un pedido con "cliente nuevo".
 
 ## Próximos pasos sugeridos

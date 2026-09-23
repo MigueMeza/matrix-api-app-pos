@@ -197,6 +197,8 @@ def corte():
 
     return jsonify(
         fondo_inicial=float(turno["fondo_inicial"]),
+        efectivo_ventas=efectivo_ventas,
+        efectivo_abonos=efectivo_apartados,
         efectivo_vendido=efectivo_vendido,
         efectivo_esperado=efectivo_esperado,
         fondo_final=fondo_final,
