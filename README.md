@@ -216,7 +216,7 @@ erDiagram
 
 **`clientes`** — catálogo global de clientes (no pertenecen a una tienda en particular), usado por apartados y pedidos.
 
-**`apartados`** — cabecera de un apartado (producto físicamente en tienda, retenido para un cliente). Al apartar, las piezas **salen del inventario** de la tienda. Estados: `activo`, `liquidado` (pagado, sin entregar), `entregado` (`fecha_entrega`), `cancelado`, `vencido` (estos dos solo los pone `/admin`). En el POS se ven como **vigente** (≤ 3 meses desde `fecha_creacion`), **expirado** (> 3 meses: ya no admite abonos ni entrega, lo revisa un administrador), **entregado** o cancelado; la vigencia se calcula al consultar, no cambia `estado` por sí sola. Los registros no se eliminan desde el POS.
+**`apartados`** — cabecera de un apartado (producto físicamente en tienda, retenido para un cliente). Al apartar, las piezas **salen del inventario** de la tienda. Estados: `activo`, `liquidado` (pagado, sin entregar), `entregado` (`fecha_entrega`), `cancelado`, `vencido` (estos dos solo los pone `/admin`). En el POS se ven como **vigente** (≤ 3 meses desde `fecha_creacion`), **expirado** (> 3 meses: ya no admite abonos ni entrega; un administrador regresa sus piezas al inventario con `POST /admin/apartados/<id>/devolver_inventario`, que lo deja `vencido` y conserva los abonos registrados), **entregado** o cancelado; la vigencia se calcula al consultar, no cambia `estado` por sí sola. Los registros no se eliminan desde el POS.
 
 **`apartado_detalles`** — productos incluidos en el apartado (misma lógica de `subtotal` generado que `detalle_ventas`).
 

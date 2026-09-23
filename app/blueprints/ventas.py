@@ -107,6 +107,8 @@ def registrar_venta(cursor, turno, items, pagos, descontar_inventario=True):
 
     items: [(producto_id, cantidad)]. pagos: [{"metodo_pago_id", "monto"}] tal como llegan del cliente.
     Revalida precios y stock contra la base, descuenta inventario y guarda los pagos.
+    El cambio siempre sale del efectivo: el pago en efectivo se guarda neto (recibido - cambio), así los
+    pagos de cada venta suman exactamente su total y el corte de caja cuadra con el dinero real.
     Con descontar_inventario=False (entrega de un pedido) no revisa ni descuenta existencias:
     esa mercancía nunca entró al inventario, estaba reservada para el cliente.
     Lanza VentaInvalida si algo no cuadra; como no se hace commit, nada queda a medias.
@@ -119,19 +121,18 @@ def registrar_venta(cursor, turno, items, pagos, descontar_inventario=True):
 
     tienda_id = turno["tienda_id"]
 
-    metodos_validos = {m["id"] for m in _metodos_pago(cursor)}
-    pagos_normalizados = []
-    total_pagado = 0.0
+    metodos = {m["id"]: m["nombre"] for m in _metodos_pago(cursor)}
+    pagos_normalizados = []  # [metodo_pago_id, monto, es_efectivo]
     try:
         for pago in pagos:
             metodo_pago_id = int(pago["metodo_pago_id"])
-            monto = float(pago["monto"])
-            if metodo_pago_id not in metodos_validos or monto <= 0:
+            monto = round(float(pago["monto"]), 2)
+            if metodo_pago_id not in metodos or monto <= 0:
                 raise VentaInvalida("Hay un pago inválido en la lista.")
-            pagos_normalizados.append((metodo_pago_id, monto))
-            total_pagado += monto
+            pagos_normalizados.append([metodo_pago_id, monto, metodos[metodo_pago_id] == "efectivo"])
     except (KeyError, TypeError, ValueError):
         raise VentaInvalida("Hay un pago inválido en la lista.")
+    total_pagado = round(sum(p[1] for p in pagos_normalizados), 2)
 
     total = 0.0
     detalles = []
@@ -160,8 +161,29 @@ def registrar_venta(cursor, turno, items, pagos, descontar_inventario=True):
         total += precio_unitario * cantidad
         detalles.append((producto_id, cantidad, precio_unitario, fila["inventario_id"]))
 
+    total = round(total, 2)
     if total_pagado < total:
         raise VentaInvalida("El pago no cubre el total de la venta.")
+
+    # El cambio solo se puede dar en efectivo: tarjeta, transferencia u otro no pueden pasarse del total
+    no_efectivo = round(sum(p[1] for p in pagos_normalizados if not p[2]), 2)
+    if no_efectivo > total:
+        raise VentaInvalida(
+            "Los pagos con tarjeta, transferencia u otro no pueden ser mayores al total: el cambio solo se da en efectivo."
+        )
+
+    # Descontar el cambio del efectivo recibido (del último pago en efectivo hacia atrás).
+    # Alcanza siempre: efectivo = pagado - no_efectivo >= pagado - total = cambio.
+    cambio = round(total_pagado - total, 2)
+    por_descontar = cambio
+    for pago in reversed(pagos_normalizados):
+        if por_descontar <= 0:
+            break
+        if pago[2]:
+            descuento = min(pago[1], por_descontar)
+            pago[1] = round(pago[1] - descuento, 2)
+            por_descontar = round(por_descontar - descuento, 2)
+    pagos_normalizados = [p for p in pagos_normalizados if p[1] > 0]
 
     cursor.execute(
         "INSERT INTO ventas (tienda_id, usuario_id, turno_id, total) VALUES (%s, %s, %s, %s)",
@@ -183,13 +205,13 @@ def registrar_venta(cursor, turno, items, pagos, descontar_inventario=True):
                 (cantidad, inventario_id),
             )
 
-    for metodo_pago_id, monto in pagos_normalizados:
+    for metodo_pago_id, monto, _ in pagos_normalizados:
         cursor.execute(
             "INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto) VALUES (%s, %s, %s)",
             (venta_id, metodo_pago_id, monto),
         )
 
-    return {"venta_id": venta_id, "total": total, "cambio": total_pagado - total}
+    return {"venta_id": venta_id, "total": total, "cambio": cambio}
 
 
 @ventas_bp.route("/ventas/finalizar", methods=["POST"])
