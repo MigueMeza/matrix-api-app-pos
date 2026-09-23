@@ -1,7 +1,5 @@
-import json
-import pymysql
 from flask import Blueprint, jsonify, request, session
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
 from ..db import db_cursor
 from ..permisos import Rol
@@ -50,103 +48,12 @@ def login():
     ), 200
 
 
-def _tiendas_activas(cursor):
-    cursor.execute("SELECT id, nombre FROM tiendas WHERE activo = 1 ORDER BY nombre")
-    return cursor.fetchall()
-
-
 @admin_bp.route("/inventarios/<int:id>", methods=["DELETE"])
 def inventario_eliminar(id):
     with db_cursor(commit=True) as cursor:
         cursor.execute("DELETE FROM inventarios WHERE id = %s", (id,))
 
     return jsonify(mensaje="Inventario eliminado."), 200
-
-
-@admin_bp.route("/usuarios", methods=["GET", "POST"])
-def usuarios():
-    if request.method == "GET":
-        with db_cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT u.id, u.nombre, u.usuario_login, u.rol, u.activo, t.nombre AS tienda_nombre
-                FROM usuarios u
-                JOIN tiendas t ON t.id = u.tienda_id
-                ORDER BY FIELD(u.rol, 'super_admin', 'supervisor', 'vendedor'), u.nombre
-                """
-            )
-            usuarios = cursor.fetchall()
-            tiendas = _tiendas_activas(cursor)
-
-        return jsonify(usuarios=usuarios, tiendas=tiendas, roles=[r.value for r in Rol]), 200
-
-    # POST (Crear usuario)
-    datos = request.get_json(silent=True) or {}
-    tienda_id = datos.get("tienda_id")
-    nombre = (datos.get("nombre") or "").strip()
-    usuario_login = (datos.get("usuario_login") or "").strip()
-    rol = datos.get("rol")
-    password = datos.get("password") or ""
-
-    roles_validos = {r.value for r in Rol}
-    if not tienda_id or not nombre or not usuario_login or rol not in roles_validos:
-        return jsonify(error="Completa todos los campos con valores válidos."), 400
-
-    if rol != Rol.VENDEDOR.value and not password:
-        return jsonify(error="Los roles supervisor y super-admin necesitan contraseña."), 400
-
-    password_hash = generate_password_hash(password) if password else None
-    try:
-        with db_cursor(commit=True) as cursor:
-            cursor.execute(
-                """
-                INSERT INTO usuarios (tienda_id, nombre, usuario_login, password_hash, rol)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (tienda_id, nombre, usuario_login, password_hash, rol),
-            )
-    except pymysql.err.IntegrityError:
-        return jsonify(error="Ese usuario ya existe (usuario_login duplicado)."), 409
-
-    return jsonify(mensaje="Usuario creado exitosamente."), 201
-
-
-@admin_bp.route("/usuarios/<int:usuario_id>/toggle", methods=["POST"])
-def usuarios_toggle(usuario_id):
-    with db_cursor(commit=True) as cursor:
-        cursor.execute("UPDATE usuarios SET activo = NOT activo WHERE id = %s", (usuario_id,))
-    return jsonify(mensaje="Estado del usuario actualizado."), 200
-
-
-@admin_bp.route("/tiendas", methods=["GET", "POST"])
-def tiendas():
-    if request.method == "GET":
-        with db_cursor() as cursor:
-            cursor.execute("SELECT id, nombre, direccion, activo FROM tiendas ORDER BY nombre")
-            tiendas = cursor.fetchall()
-        return jsonify(tiendas=tiendas), 200
-
-    datos = request.get_json(silent=True) or {}
-    nombre = (datos.get("nombre") or "").strip()
-    direccion = (datos.get("direccion") or "").strip() or None
-
-    if not nombre:
-        return jsonify(error="El nombre es obligatorio."), 400
-
-    with db_cursor(commit=True) as cursor:
-        cursor.execute(
-            "INSERT INTO tiendas (nombre, direccion) VALUES (%s, %s)",
-            (nombre, direccion),
-        )
-
-    return jsonify(mensaje="Tienda creada exitosamente."), 201
-
-
-@admin_bp.route("/tiendas/<int:tienda_id>/toggle", methods=["POST"])
-def tiendas_toggle(tienda_id):
-    with db_cursor(commit=True) as cursor:
-        cursor.execute("UPDATE tiendas SET activo = NOT activo WHERE id = %s", (tienda_id,))
-    return jsonify(mensaje="Estado de la tienda actualizado."), 200
 
 
 @admin_bp.route("/pedidos", methods=["GET"])
@@ -341,6 +248,6 @@ def apartados_devolver_inventario(apartado_id):
     ), 200
 
 
-# Resumen de inicio, ingreso de mercancía y consulta de ventas: viven en su propio módulo pero registran sus rutas en admin_bp.
+# Cada sección del panel vive en su propio módulo pero registra sus rutas en admin_bp.
 # Se importa al final porque necesita admin_bp ya definido.
-from . import admin_inventario, admin_resumen, admin_ventas  # noqa: E402,F401
+from . import admin_inventario, admin_personal, admin_resumen, admin_tiendas, admin_ventas  # noqa: E402,F401

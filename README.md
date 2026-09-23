@@ -168,8 +168,8 @@ erDiagram
 |---|---|---|
 | id | PK | |
 | tienda_id | FK → tiendas | tienda "base" del usuario (informativo; supervisor/super_admin pueden abrir cajas en cualquier tienda) |
-| nombre, usuario_login | | `usuario_login` es único |
-| password_hash | nullable | **NULL para vendedor.** Solo supervisor y super_admin inician sesión. |
+| nombre, usuario_login | | `usuario_login` es único. Los empleados dados de alta desde `/admin` reciben uno generado (`app/credenciales.py`): 2 letras del primer nombre + 2 del apellido paterno + un número consecutivo (Antonio Pérez → `ANPE1`, el siguiente `ANPE2`); sin acentos, y si las 4 letras forman una palabra de la lista de inconvenientes de la CURP se cambian 2 al azar. |
+| password_hash | nullable | Hash de un **NIP de 6 dígitos** generado al dar de alta o al resetearlo (`POST /admin/usuarios/<id>/nip`); el NIP en claro solo viaja en esa respuesta. Solo supervisor y super_admin inician sesión (el NIP de un vendedor queda listo por si más adelante lo hacen). |
 | rol | enum | `vendedor` \| `supervisor` \| `super_admin` |
 | activo | bool | |
 
