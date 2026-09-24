@@ -41,8 +41,10 @@ module "respaldos" {
 module "github_oidc" {
   source = "../modules/github-oidc"
 
-  nombre          = local.nombre
-  repositorio     = "MigueMeza/matrix-api-app-pos"
+  nombre            = local.nombre
+  repositorio       = "MigueMeza/matrix-api-app-pos"
+  dueno_id          = "37991807"   # api.github.com/users/MigueMeza → id
+  repositorio_id    = "1382119970" # api.github.com/repos/MigueMeza/matrix-api-app-pos → id
   instancia_arn     = module.servidor.instancia_arn
   bucket_deploy_arn = module.respaldos.bucket_arn
   crear_proveedor   = var.crear_proveedor_oidc_github
