@@ -43,8 +43,9 @@ module "github_oidc" {
 
   nombre          = local.nombre
   repositorio     = "MigueMeza/matrix-api-app-pos"
-  instancia_arn   = module.servidor.instancia_arn
-  crear_proveedor = var.crear_proveedor_oidc_github
+  instancia_arn     = module.servidor.instancia_arn
+  bucket_deploy_arn = module.respaldos.bucket_arn
+  crear_proveedor   = var.crear_proveedor_oidc_github
 }
 
 # Alerta de gasto por correo (solo si se configuró un correo)

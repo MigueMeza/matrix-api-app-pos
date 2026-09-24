@@ -14,7 +14,7 @@ output "rol_github_arn" {
 }
 
 output "bucket_respaldos" {
-  description = "Donde el deploy guarda los mysqldump"
+  description = "Variable BUCKET_RESPALDOS en GitHub: respaldos de MySQL y paquete temporal del deploy"
   value       = module.respaldos.bucket
 }
 
