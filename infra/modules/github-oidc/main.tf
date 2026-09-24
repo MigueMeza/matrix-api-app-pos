@@ -96,6 +96,13 @@ data "aws_iam_policy_document" "servidor" {
     resources = ["*"]
   }
 
+  # Paquete temporal del deploy (compose, migraciones, .env.prod): se sube, el servidor lo descarga y se borra
+  statement {
+    sid       = "PaqueteDeploy"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${var.bucket_deploy_arn}/deploy/*"]
+  }
+
   statement {
     sid       = "CerrarSusSesiones"
     actions   = ["ssm:TerminateSession", "ssm:ResumeSession"]

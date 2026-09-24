@@ -13,6 +13,11 @@ variable "instancia_arn" {
   type        = string
 }
 
+variable "bucket_deploy_arn" {
+  description = "Bucket donde el deploy deja su paquete temporal (en la carpeta deploy/)"
+  type        = string
+}
+
 variable "crear_proveedor" {
   description = "false si la cuenta ya tiene el proveedor OIDC de token.actions.githubusercontent.com"
   type        = bool

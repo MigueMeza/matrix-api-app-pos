@@ -53,6 +53,11 @@ def create_app(config_class=Config):
     app.register_blueprint(ventas_bp)
     app.register_blueprint(admin_bp)
 
+    # Comandos de consola (flask --app wsgi crear-admin ...)
+    from . import comandos
+
+    comandos.registrar(app)
+
     # 2. Manejadores de error en formato JSON (para evitar que Flask devuelva HTML si algo falla)
     @app.errorhandler(404)
     def no_encontrado(e):
