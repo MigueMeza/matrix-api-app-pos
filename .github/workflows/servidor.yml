@@ -1,0 +1,47 @@
+name: Servidor
+
+# Botón para encender o apagar el servidor fuera del horario automático
+# (Actions → Servidor → Run workflow). Si se enciende a mano, el horario lo apaga a las 17:30.
+#
+# Requiere en Settings → Secrets and variables → Actions → Variables:
+#   AWS_ROLE_ARN          = output rol_github_arn de infra/produccion
+#   SERVIDOR_INSTANCE_ID  = output instancia_id de infra/produccion
+
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: ¿Qué hacer con el servidor?
+        type: choice
+        options:
+          - encender
+          - apagar
+
+permissions:
+  id-token: write # token OIDC para entrar a AWS sin llaves
+  contents: read
+
+jobs:
+  servidor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Encender
+        if: inputs.accion == 'encender'
+        run: |
+          aws ec2 start-instances --instance-ids "${{ vars.SERVIDOR_INSTANCE_ID }}"
+          aws ec2 wait instance-running --instance-ids "${{ vars.SERVIDOR_INSTANCE_ID }}"
+          echo "Servidor encendido. La API tarda 1 o 2 minutos más en responder."
+
+      - name: Apagar
+        if: inputs.accion == 'apagar'
+        run: |
+          aws ec2 stop-instances --instance-ids "${{ vars.SERVIDOR_INSTANCE_ID }}"
+          aws ec2 wait instance-stopped --instance-ids "${{ vars.SERVIDOR_INSTANCE_ID }}"
+          echo "Servidor apagado."

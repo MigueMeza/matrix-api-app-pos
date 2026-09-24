@@ -14,4 +14,4 @@ RUN useradd --create-home appuser
 USER appuser
 
 EXPOSE 5000
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "wsgi:app"]
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "wsgi:app"]

@@ -220,3 +220,11 @@ __marimo__/
 .streamlit/secrets.toml
 
 .env
+# Terraform (infra/): estado y archivos locales. .terraform.lock.hcl SÃ se sube.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+infra/*/backend.hcl
+crash.log

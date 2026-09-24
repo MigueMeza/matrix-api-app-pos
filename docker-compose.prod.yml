@@ -1,8 +1,8 @@
 services:
   web:
-    image: ghcr.io/miguemeza/matrix-api:${VERSION}
+    image: ghcr.io/miguemeza/matrix-api-app-pos:${VERSION}
     ports:
-      - "5000:5000"
+      - "80:5000"
     env_file: .env.prod
     restart: unless-stopped
     depends_on:
@@ -10,7 +10,9 @@ services:
 
   db:
     image: mysql:8.0
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: >
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      --performance-schema=OFF --innodb-buffer-pool-size=64M --max-connections=20
     environment:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
@@ -18,5 +20,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
+    restart: unless-stopped
+    stop_grace_period: 60s
+
 volumes:
   db_data:
