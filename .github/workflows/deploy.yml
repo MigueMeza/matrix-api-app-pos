@@ -153,19 +153,26 @@ jobs:
           DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          umask 077
           mkdir -p paquete/db/liquibase
           cp docker-compose.prod.yml liquibase.properties deploy/desplegar.sh paquete/
           cp -r db/liquibase/changelog paquete/db/liquibase/
 
+          # Solo los archivos con secretos quedan legibles únicamente por su dueño. El resto (migraciones,
+          # liquibase.properties) lo lee el contenedor de Liquibase, que no corre como root.
+          umask 077
+
+          # Comillas simples: Docker Compose toma el valor literal. Sin ellas, un "$" dentro de un
+          # secreto se interpreta como variable y el valor se recorta.
           cat > paquete/.env.prod <<EOF
-          SECRET_KEY=$SECRET_KEY
-          DB_HOST=db
-          DB_NAME=$DB_NAME
-          DB_USER=$DB_USER
-          DB_PASSWORD=$DB_PASSWORD
-          DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
+          SECRET_KEY='$SECRET_KEY'
+          DB_HOST='db'
+          DB_NAME='$DB_NAME'
+          DB_USER='$DB_USER'
+          DB_PASSWORD='$DB_PASSWORD'
+          DB_ROOT_PASSWORD='$DB_ROOT_PASSWORD'
           EOF
+
+          # liquibase.env sin comillas: "docker run --env-file" no interpreta "$" pero sí conserva las comillas
 
           cat > paquete/liquibase.env <<EOF
           LIQUIBASE_COMMAND_URL=jdbc:mysql://db:3306/$DB_NAME

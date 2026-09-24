@@ -8,6 +8,16 @@ variable "repositorio" {
   type        = string
 }
 
+variable "dueno_id" {
+  description = "Id numérico de la cuenta dueña del repositorio en GitHub (no cambia aunque se renombre)"
+  type        = string
+}
+
+variable "repositorio_id" {
+  description = "Id numérico del repositorio en GitHub (no cambia aunque se renombre)"
+  type        = string
+}
+
 variable "instancia_arn" {
   description = "Servidor que el rol puede encender, apagar y administrar por SSM"
   type        = string

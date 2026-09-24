@@ -15,6 +15,9 @@ export VERSION # docker-compose.prod.yml usa ${VERSION} para la imagen de la API
 
 cd /opt/matrix
 chmod 600 .env.prod liquibase.env ghcr-token
+# El contenedor de Liquibase no corre como root: necesita poder leer las migraciones y su configuración
+chmod 644 liquibase.properties docker-compose.prod.yml
+chmod -R a+rX db
 
 compose() {
   docker compose -p matrix --env-file .env.prod -f docker-compose.prod.yml "$@"
