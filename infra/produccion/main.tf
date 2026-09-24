@@ -50,6 +50,16 @@ module "github_oidc" {
   crear_proveedor   = var.crear_proveedor_oidc_github
 }
 
+# Instalador y actualizaciones automáticas de la app de escritorio (bucket público de solo lectura)
+module "descargas" {
+  source = "../modules/descargas"
+
+  nombre             = local.nombre
+  repositorio        = "MigueMeza/matrix-desktop-app-pos"
+  dueno_id           = "37991807"
+  proveedor_oidc_arn = module.github_oidc.proveedor_arn
+}
+
 # Alerta de gasto por correo (solo si se configuró un correo)
 module "presupuesto" {
   source = "../modules/presupuesto"

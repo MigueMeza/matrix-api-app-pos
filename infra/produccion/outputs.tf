@@ -18,6 +18,21 @@ output "bucket_respaldos" {
   value       = module.respaldos.bucket
 }
 
+output "descargas_bucket" {
+  description = "Variable DESCARGAS_BUCKET en el repo de la app de escritorio"
+  value       = module.descargas.bucket
+}
+
+output "descargas_rol_arn" {
+  description = "Variable AWS_ROLE_ARN en el repo de la app de escritorio"
+  value       = module.descargas.rol_publicar_arn
+}
+
+output "instalador_url" {
+  description = "Descarga del instalador para una PC nueva"
+  value       = "${module.descargas.url_actualizaciones}MatrixPOS-win-Setup.exe"
+}
+
 output "conectarse" {
   description = "Terminal en el servidor sin SSH (requiere el Session Manager plugin de AWS CLI)"
   value       = "aws ssm start-session --target ${module.servidor.instancia_id} --region us-east-1"
