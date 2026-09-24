@@ -19,6 +19,21 @@ locals {
   url_oidc      = "https://token.actions.githubusercontent.com"
   proveedor_arn = var.crear_proveedor ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
   region        = data.aws_region.actual.region
+
+  # GitHub manda el repositorio en el claim "sub" con los ids inmutables de la cuenta y del repo:
+  #   repo:MigueMeza@37991807/matrix-api-app-pos@1382119970:environment:production
+  # Con los ids, un repo con el mismo nombre creado por otra persona (si este se renombra o borra) no entra.
+  # También se acepta el formato anterior, sin ids, por si algún token todavía llega así.
+  dueno        = split("/", var.repositorio)[0]
+  repo         = split("/", var.repositorio)[1]
+  repo_con_ids = "${local.dueno}@${var.dueno_id}/${local.repo}@${var.repositorio_id}"
+
+  sujetos_permitidos = flatten([
+    for repositorio in [local.repo_con_ids, var.repositorio] : [
+      "repo:${repositorio}:ref:refs/heads/main",
+      "repo:${repositorio}:environment:production",
+    ]
+  ])
 }
 
 # Solo puede existir un proveedor de GitHub por cuenta: se crea o se reutiliza el existente
@@ -53,10 +68,7 @@ data "aws_iam_policy_document" "asumir_github" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.repositorio}:ref:refs/heads/main",
-        "repo:${var.repositorio}:environment:production",
-      ]
+      values   = local.sujetos_permitidos
     }
   }
 }
