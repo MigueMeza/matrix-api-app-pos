@@ -1,0 +1,59 @@
+#!/bin/bash
+# Preparación del servidor en su primer arranque (lo ejecuta EC2 una sola vez).
+# Plantilla de Terraform: las variables con llaves las reemplaza Terraform; las de bash van sin llaves.
+set -euxo pipefail
+
+# Reintenta un comando de red: en los primeros segundos se conecta la IP fija y puede cortar una descarga
+reintentar() {
+  for intento in 1 2 3 4 5; do
+    "$@" && return 0
+    sleep 15
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------- 1. disco de datos
+# Ahí vive /var/lib/docker (contenedores y el volumen de MySQL). Se formatea solo si está vacío:
+# si el servidor se recrea, el disco llega con los datos y no se toca.
+DISCO=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volumen_datos}
+for i in $(seq 1 60); do
+  [ -e "$DISCO" ] && break
+  sleep 5
+done
+
+if ! blkid "$DISCO"; then
+  mkfs -t xfs "$DISCO"
+fi
+
+mkdir -p /var/lib/docker
+UUID=$(blkid -s UUID -o value "$DISCO")
+grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /var/lib/docker xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+
+# ---------------------------------------------------------------- 2. swap de 1 GB
+# Colchón de memoria para MySQL + la API (el servidor tiene 1 GB de RAM)
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=1024
+  chmod 600 /swapfile
+  mkswap /swapfile
+  echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
+fi
+swapon -a
+
+# ---------------------------------------------------------------- 3. Docker y Docker Compose
+reintentar dnf install -y docker
+
+# Docker no arranca si el disco de datos no está montado (evita crear una base vacía en el disco del sistema)
+mkdir -p /etc/systemd/system/docker.service.d
+printf '[Unit]\nRequiresMountsFor=/var/lib/docker\n' > /etc/systemd/system/docker.service.d/disco-datos.conf
+systemctl daemon-reload
+systemctl enable --now docker
+
+mkdir -p /usr/local/lib/docker/cli-plugins
+reintentar curl -fsSL "https://github.com/docker/compose/releases/download/${version_compose}/docker-compose-linux-${arquitectura_compose}" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# ---------------------------------------------------------------- 4. carpeta del proyecto
+# Aquí el pipeline de deploy deja docker-compose.prod.yml y .env.prod
+mkdir -p /opt/matrix/respaldos

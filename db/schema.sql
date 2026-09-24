@@ -42,10 +42,24 @@ CREATE TABLE productos (
     nombre VARCHAR(150) NOT NULL,
     talla VARCHAR(20) NULL,
     color VARCHAR(50) NULL,
-    precio DECIMAL(10,2) NOT NULL,
+    precio DECIMAL(10,2) NOT NULL,                -- precio de venta
+    precio_compra DECIMAL(10,2) NULL,             -- cuánto le costó a la tienda
+    precio_publico_proveedor DECIMAL(10,2) NULL,  -- a cuánto lo vende el proveedor al público (opcional)
     codigo_barras VARCHAR(100) NULL UNIQUE,
     activo TINYINT(1) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- configuracion (valores del negocio editables desde /admin)
+-- ------------------------------------------------------------
+-- margen_precio_sugerido: precio sugerido = precio de compra + este monto.
+CREATE TABLE configuracion (
+    clave VARCHAR(50) PRIMARY KEY,
+    valor VARCHAR(255) NOT NULL,
+    actualizado DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO configuracion (clave, valor) VALUES ('margen_precio_sugerido', '120');
 
 -- ------------------------------------------------------------
 -- 4. inventarios (stock por tienda + producto)
@@ -206,7 +220,10 @@ CREATE INDEX idx_clientes_telefono ON clientes(telefono);
 -- ------------------------------------------------------------
 -- El producto existe físicamente en la tienda pero está retenido para un
 -- cliente hasta que termine de abonar o expire (3 meses) — el vencimiento
--- se calcula al vuelo en v_apartados_resumen, no cambia `estado` solo.
+-- se calcula al vuelo (v_apartados_resumen, /apartados), no cambia `estado` solo.
+-- Al apartar, las piezas salen de inventarios (nadie más puede venderlas).
+-- 'liquidado' = pagado completo sin entregar; 'entregado' = el cliente ya se
+-- lo llevó (fecha_entrega). 'cancelado'/'vencido' solo los pone /admin.
 CREATE TABLE apartados (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tienda_id INT NOT NULL,
@@ -216,7 +233,8 @@ CREATE TABLE apartados (
     fecha_limite DATE NULL,               -- fecha acordada para liquidar
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     anticipo_requerido DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    estado ENUM('activo','liquidado','cancelado','vencido') NOT NULL DEFAULT 'activo',
+    estado ENUM('activo','liquidado','entregado','cancelado','vencido') NOT NULL DEFAULT 'activo',
+    fecha_entrega DATETIME NULL,
     observaciones TEXT NULL,
     CONSTRAINT fk_apartado_tienda
         FOREIGN KEY (tienda_id) REFERENCES tiendas(id)
@@ -283,8 +301,9 @@ CREATE TABLE apartado_pagos (
 -- 14. pedidos (cabecera)
 -- ------------------------------------------------------------
 -- Un pedido nace 'pendiente' cuando cualquier usuario del POS lo registra.
--- Solo /admin puede moverlo a 'disponible' (ya llegó, se acredita a
--- inventarios) o a 'cancelado'. Un pedido 'disponible' puede convertirse en
+-- Solo /admin puede moverlo a 'disponible' (ya llegó; la mercancía queda
+-- reservada para el cliente y NO entra a inventarios) o a 'cancelado' (si ya
+-- estaba disponible, sus piezas sí se suman a inventarios). Un pedido 'disponible' puede convertirse en
 -- una venta o en un apartado (nunca ambos, ver chk_pedido_conversion_unica);
 -- al convertirse pasa a 'entregado' y queda apuntando a cuál de los dos.
 CREATE TABLE pedidos (
@@ -334,11 +353,20 @@ CREATE TABLE pedidos (
 -- ------------------------------------------------------------
 -- 15. pedido_detalles (prendas solicitadas)
 -- ------------------------------------------------------------
+-- Una línea es del catálogo (producto_id) o "fuera de catálogo": el cajero
+-- solo conoce una descripción genérica y la talla (ej. "Chamarra de gala", M)
+-- porque viene de un catálogo del proveedor. En ese caso producto_id es NULL
+-- y /admin debe asignarle un producto real (con precio) antes de marcar el
+-- pedido como 'disponible'. La regla "producto_id o descripcion" la valida la
+-- API: MySQL no permite un CHECK sobre una columna con FK ON UPDATE CASCADE.
 CREATE TABLE pedido_detalles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     pedido_id INT NOT NULL,
-    producto_id INT NOT NULL,
+    producto_id INT NULL,
+    descripcion VARCHAR(150) NULL,        -- solo fuera de catálogo
+    talla VARCHAR(20) NULL,               -- solo fuera de catálogo
     cantidad INT NOT NULL,
+    comentario VARCHAR(255) NULL,         -- ej. "puede ser roja o negra"
     CONSTRAINT chk_pedido_detalle_cantidad CHECK (cantidad > 0),
     CONSTRAINT fk_pedido_detalle_pedido
         FOREIGN KEY (pedido_id) REFERENCES pedidos(id)

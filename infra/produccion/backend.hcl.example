@@ -1,0 +1,2 @@
+# Copia este archivo como backend.hcl con el bucket que imprime infra/bootstrap (output bucket_estado).
+bucket = "matrix-pos-tfstate-123456789012"

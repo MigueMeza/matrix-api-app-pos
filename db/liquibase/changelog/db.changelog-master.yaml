@@ -1,0 +1,57 @@
+# Changelog principal de Matrix POS.
+#
+# Los archivos se incluyen uno por uno (no includeAll) para que el orden sea explícito:
+# cada tabla debe crearse después de las tablas a las que apunta con llaves foráneas.
+# Al final de cada release se marca la base con un tag para poder hacer rollback a él:
+#   liquibase rollback --tag=v1.0.0
+#
+# Para agregar un cambio: crea el .sql en releases/<versión>/ y agrégalo aquí, antes del tag de su versión.
+
+databaseChangeLog:
+
+  # ---------------------------------------------------------------- v1.0.0 (esquema base, igual a db/schema.sql)
+  - include:
+      file: releases/v1.0.0/001-tiendas.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/002-usuarios.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/003-productos.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/004-configuracion.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/005-inventarios.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/006-ventas.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/007-metodos-pago.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/008-venta-pagos.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/009-turnos-caja.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/010-clientes.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/011-apartados.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/012-pedidos.sql
+      relativeToChangelogFile: true
+  - include:
+      file: releases/v1.0.0/013-vistas.sql
+      relativeToChangelogFile: true
+  - changeSet:
+      id: tag-v1.0.0
+      author: matrix
+      changes:
+        - tagDatabase:
+            tag: v1.0.0

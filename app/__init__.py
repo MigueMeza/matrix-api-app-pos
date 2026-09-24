@@ -1,11 +1,31 @@
+from datetime import date, datetime, timezone
+
 from flask import Flask, jsonify
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 
 from .config import Config
 
 
+class JSONProvider(DefaultJSONProvider):
+    """Fechas en ISO 8601 en lugar del formato HTTP que usa Flask por defecto.
+
+    MySQL corre en UTC y los DATETIME llegan sin zona, así que se marcan como UTC
+    ("2026-09-22T21:06:45+00:00"); cada cliente los convierte a su hora local.
+    """
+
+    @staticmethod
+    def default(o):
+        if isinstance(o, datetime):
+            return (o if o.tzinfo else o.replace(tzinfo=timezone.utc)).isoformat()
+        if isinstance(o, date):
+            return o.isoformat()
+        return DefaultJSONProvider.default(o)
+
+
 def create_app(config_class=Config):
     app = Flask(__name__)
+    app.json = JSONProvider(app)
     app.config.from_object(config_class)
 
     # 1. Habilitar CORS para permitir peticiones desde otras aplicaciones/dominios
@@ -16,6 +36,7 @@ def create_app(config_class=Config):
     from .blueprints.apartados import apartados_bp
     from .blueprints.auth import auth_bp
     from .blueprints.caja import caja_bp
+    from .blueprints.clientes import clientes_bp
     from .blueprints.core import core_bp
     from .blueprints.pedidos import pedidos_bp
     from .blueprints.productos import productos_bp
@@ -25,11 +46,17 @@ def create_app(config_class=Config):
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(caja_bp)
+    app.register_blueprint(clientes_bp)
     app.register_blueprint(productos_bp)
     app.register_blueprint(apartados_bp)
     app.register_blueprint(pedidos_bp)
     app.register_blueprint(ventas_bp)
     app.register_blueprint(admin_bp)
+
+    # Comandos de consola (flask --app wsgi crear-admin ...)
+    from . import comandos
+
+    comandos.registrar(app)
 
     # 2. Manejadores de error en formato JSON (para evitar que Flask devuelva HTML si algo falla)
     @app.errorhandler(404)

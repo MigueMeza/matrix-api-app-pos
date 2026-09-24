@@ -1,0 +1,217 @@
+name: Deploy
+
+# En cada push a main: valida las migraciones, construye la imagen y despliega en producción.
+# Cada paso espera al anterior: si algo falla, producción no se toca.
+#
+# Requiere en Settings → Secrets and variables → Actions:
+#   Variables: AWS_ROLE_ARN, SERVIDOR_INSTANCE_ID, BUCKET_RESPALDOS  (outputs de infra/produccion)
+#   Secrets:   SECRET_KEY, DB_NAME, DB_USER, DB_PASSWORD, DB_ROOT_PASSWORD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Nunca dos deploys a la vez
+concurrency:
+  group: deploy-produccion
+  cancel-in-progress: false
+
+jobs:
+  validar:
+    name: Validar migraciones
+    runs-on: ubuntu-latest
+
+    # Base temporal y desechable: update → rollback de todo → update
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test
+          MYSQL_DATABASE: matrix_test
+        ports: ["3306:3306"]
+        options: --health-cmd="mysqladmin ping -ptest" --health-interval=5s --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: update, rollback y update otra vez
+        run: |
+          lb() {
+            docker run --rm --network host -e INSTALL_MYSQL=true \
+              -e LIQUIBASE_COMMAND_URL=jdbc:mysql://127.0.0.1:3306/matrix_test \
+              -e LIQUIBASE_COMMAND_USERNAME=root -e LIQUIBASE_COMMAND_PASSWORD=test \
+              -v "$PWD/db/liquibase/changelog:/liquibase/changelog" \
+              -v "$PWD/liquibase.properties:/liquibase/liquibase.properties" \
+              liquibase/liquibase:5.0.4 --defaults-file=/liquibase/liquibase.properties "$@"
+          }
+          lb update
+          lb rollback-count --count=1000
+          lb update
+
+  imagen:
+    name: Construir imagen
+    needs: validar
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer versión
+        id: version
+        run: echo "version=$(grep -oP 'VERSION = "\K[^"]+' app/config.py)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # El servidor es ARM (t4g): la imagen se construye para arm64
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  desplegar:
+    name: Desplegar en producción
+    needs: imagen
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      id-token: write # OIDC: entrar a AWS sin llaves
+      contents: read
+      packages: read # token para que el servidor descargue la imagen de GHCR
+
+    env:
+      INSTANCIA: ${{ vars.SERVIDOR_INSTANCE_ID }}
+      BUCKET: ${{ vars.BUCKET_RESPALDOS }}
+      VERSION: ${{ needs.imagen.outputs.version }}
+      PAQUETE: deploy/${{ github.run_id }}.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # Fuera de horario el servidor está apagado: se enciende para el deploy y se vuelve a apagar al final
+      - name: Encender el servidor si está apagado
+        id: servidor
+        run: |
+          estado=$(aws ec2 describe-instances --instance-ids "$INSTANCIA" --query "Reservations[0].Instances[0].State.Name" --output text)
+          echo "estado_inicial=$estado" >> "$GITHUB_OUTPUT"
+          echo "Servidor: $estado"
+          if [ "$estado" != "running" ]; then
+            [ "$estado" = "stopping" ] && aws ec2 wait instance-stopped --instance-ids "$INSTANCIA"
+            aws ec2 start-instances --instance-ids "$INSTANCIA" >/dev/null
+            aws ec2 wait instance-running --instance-ids "$INSTANCIA"
+          fi
+          for _ in $(seq 1 30); do
+            ping=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCIA" \
+                   --query "InstanceInformationList[0].PingStatus" --output text)
+            [ "$ping" = "Online" ] && break
+            sleep 10
+          done
+          [ "$ping" = "Online" ] || { echo "El agente de SSM no está en línea"; exit 1; }
+
+      # Los secretos viajan en un archivo temporal en S3 (privado y cifrado), no en el comando de SSM:
+      # AWS guarda los parámetros de cada comando en su historial.
+      - name: Preparar paquete del deploy
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          mkdir -p paquete/db/liquibase
+          cp docker-compose.prod.yml liquibase.properties deploy/desplegar.sh paquete/
+          cp -r db/liquibase/changelog paquete/db/liquibase/
+
+          cat > paquete/.env.prod <<EOF
+          SECRET_KEY=$SECRET_KEY
+          DB_HOST=db
+          DB_NAME=$DB_NAME
+          DB_USER=$DB_USER
+          DB_PASSWORD=$DB_PASSWORD
+          DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
+          EOF
+
+          cat > paquete/liquibase.env <<EOF
+          LIQUIBASE_COMMAND_URL=jdbc:mysql://db:3306/$DB_NAME
+          LIQUIBASE_COMMAND_USERNAME=$DB_USER
+          LIQUIBASE_COMMAND_PASSWORD=$DB_PASSWORD
+          EOF
+
+          printf '%s' "$GHCR_TOKEN" > paquete/ghcr-token
+
+          tar -czf paquete.tar.gz -C paquete .
+          aws s3 cp paquete.tar.gz "s3://$BUCKET/$PAQUETE" --sse AES256 --only-show-errors
+          rm -rf paquete paquete.tar.gz
+
+      - name: Ejecutar el deploy en el servidor
+        run: |
+          comando="set -e
+          aws s3 cp s3://$BUCKET/$PAQUETE /tmp/paquete.tar.gz --only-show-errors
+          rm -rf /opt/matrix/db
+          tar -xzf /tmp/paquete.tar.gz -C /opt/matrix --no-same-owner
+          rm -f /tmp/paquete.tar.gz
+          cd /opt/matrix && bash desplegar.sh $VERSION $BUCKET ${{ github.actor }}"
+
+          id=$(aws ssm send-command --instance-ids "$INSTANCIA" --document-name AWS-RunShellScript \
+                 --comment "Deploy v$VERSION" \
+                 --parameters "$(jq -n --arg c "$comando" '{commands: [$c], executionTimeout: ["900"]}')" \
+                 --query Command.CommandId --output text)
+          echo "Comando SSM: $id"
+
+          for _ in $(seq 1 100); do
+            estado=$(aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+                     --query Status --output text 2>/dev/null || echo Pending)
+            case "$estado" in
+              Pending|InProgress|Delayed) sleep 10 ;;
+              *) break ;;
+            esac
+          done
+
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" --query StandardOutputContent --output text
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" --query StandardErrorContent --output text >&2
+          echo "Resultado: $estado"
+          [ "$estado" = "Success" ]
+
+      - name: Borrar el paquete de S3
+        if: always()
+        run: aws s3 rm "s3://$BUCKET/$PAQUETE" --only-show-errors || true
+
+      - name: Volver a apagar el servidor
+        if: always() && steps.servidor.outputs.estado_inicial == 'stopped'
+        run: aws ec2 stop-instances --instance-ids "$INSTANCIA" >/dev/null

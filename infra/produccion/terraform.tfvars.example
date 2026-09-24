@@ -1,0 +1,11 @@
+# Copia este archivo como terraform.tfvars (no se sube a git) y ajusta lo que necesites.
+# Todas las variables tienen valor por defecto (ver variables.tf); aquí solo lo que cambia.
+
+correo_alertas          = "tu-correo@ejemplo.com"
+presupuesto_mensual_usd = 20
+
+# Si la cuenta ya tiene el proveedor OIDC de GitHub (de otro proyecto):
+# crear_proveedor_oidc_github = false
+
+# Para dejar el servidor encendido siempre:
+# horario_activo = false

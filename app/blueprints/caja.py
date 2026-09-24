@@ -32,6 +32,25 @@ def _tiendas_activas(cursor):
     return cursor.fetchall()
 
 
+def _turnos_abiertos(cursor):
+    """Cajas abiertas en cualquier tienda: si su terminal se cerró o se descompuso, se pueden retomar."""
+    cursor.execute(
+        """
+        SELECT t.id, t.tienda_id, ti.nombre AS tienda_nombre, u.nombre AS usuario_nombre,
+               t.fecha_apertura, t.fondo_inicial
+        FROM turnos_caja t
+        JOIN tiendas ti ON ti.id = t.tienda_id
+        JOIN usuarios u ON u.id = t.usuario_id
+        WHERE t.estado = 'abierto'
+        ORDER BY t.fecha_apertura
+        """
+    )
+    turnos = cursor.fetchall()
+    for turno in turnos:
+        turno["fondo_inicial"] = float(turno["fondo_inicial"])
+    return turnos
+
+
 @caja_bp.route("/abrir", methods=["GET"])
 @requiere_rol(Rol.SUPER_ADMIN, Rol.SUPERVISOR)
 def abrir_formulario():
@@ -40,12 +59,38 @@ def abrir_formulario():
     with db_cursor() as cursor:
         vendedores = _vendedores_disponibles(cursor)
         tiendas = _tiendas_activas(cursor)
+        turnos_abiertos = _turnos_abiertos(cursor)
 
     return jsonify(
         vendedores=vendedores,
         tiendas=tiendas,
         puede_vender_el_mismo=puede_vender_el_mismo,
+        turnos_abiertos=turnos_abiertos,
     ), 200
+
+
+@caja_bp.route("/retomar", methods=["POST"])
+@requiere_rol(Rol.SUPER_ADMIN, Rol.SUPERVISOR)
+def retomar():
+    """Un supervisor/super_admin pasa a esta terminal una caja que quedó abierta en otra
+    (o en esta, si la app se cerró y se perdió la sesión). Igual que al abrir caja, la sesión
+    de usuario se reemplaza por el turno.
+    """
+    datos = request.get_json(silent=True) or {}
+    try:
+        turno_id = int(datos.get("turno_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="Indica la caja que quieres retomar."), 400
+
+    with db_cursor() as cursor:
+        cursor.execute("SELECT id FROM turnos_caja WHERE id = %s AND estado = 'abierto'", (turno_id,))
+        if not cursor.fetchone():
+            return jsonify(error="Esa caja ya no está abierta."), 409
+
+    session.clear()
+    session["turno_id"] = turno_id
+
+    return jsonify(mensaje="Caja retomada.", turno_id=turno_id), 200
 
 
 @caja_bp.route("/abrir", methods=["POST"])
@@ -197,6 +242,8 @@ def corte():
 
     return jsonify(
         fondo_inicial=float(turno["fondo_inicial"]),
+        efectivo_ventas=efectivo_ventas,
+        efectivo_abonos=efectivo_apartados,
         efectivo_vendido=efectivo_vendido,
         efectivo_esperado=efectivo_esperado,
         fondo_final=fondo_final,
