@@ -140,12 +140,23 @@ resource "aws_ebs_volume" "datos" {
   }
 }
 
+# Llave pública para SSH (usuario ec2-user). La privada nunca sale de la PC de quien la generó.
+# AWS no permite cambiar la llave de una instancia existente: agregarla o cambiarla recrea el servidor
+# (la base sobrevive: está en el disco de datos).
+resource "aws_key_pair" "servidor" {
+  count = var.llave_ssh_publica == null ? 0 : 1
+
+  key_name   = "${var.nombre}-servidor"
+  public_key = var.llave_ssh_publica
+}
+
 resource "aws_instance" "servidor" {
   ami                    = data.aws_ssm_parameter.ami.insecure_value
   instance_type          = var.tipo_instancia
   subnet_id              = aws_subnet.servidor.id
   vpc_security_group_ids = [aws_security_group.servidor.id]
   iam_instance_profile   = aws_iam_instance_profile.servidor.name
+  key_name               = one(aws_key_pair.servidor[*].key_name)
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     volumen_datos        = replace(aws_ebs_volume.datos.id, "-", "")
@@ -180,6 +191,10 @@ resource "aws_volume_attachment" "datos" {
   device_name = "/dev/sdf"
   volume_id   = aws_ebs_volume.datos.id
   instance_id = aws_instance.servidor.id
+
+  # Si hay que desconectar el disco (al recrear el servidor), primero se apaga la máquina:
+  # MySQL cierra limpio y el disco no se desconecta en pleno uso
+  stop_instance_before_detaching = true
 }
 
 resource "aws_eip" "servidor" {

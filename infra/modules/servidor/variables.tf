@@ -36,6 +36,12 @@ variable "etiquetas_disco_datos" {
   default     = {}
 }
 
+variable "llave_ssh_publica" {
+  description = "Contenido de la llave pública SSH (ssh-ed25519 AAAA...). null = sin llave. Cambiarla recrea el servidor."
+  type        = string
+  default     = null
+}
+
 variable "ssh_permitido_desde" {
   description = "IPs (CIDR, ej. 201.141.31.69/32) que pueden entrar por SSH al puerto 22. Vacío = puerto 22 cerrado."
   type        = list(string)
