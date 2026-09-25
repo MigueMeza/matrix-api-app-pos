@@ -7,5 +7,9 @@ presupuesto_mensual_usd = 20
 # Si la cuenta ya tiene el proveedor OIDC de GitHub (de otro proyecto):
 # crear_proveedor_oidc_github = false
 
+# SSH al servidor solo desde tu IP (la ves en https://checkip.amazonaws.com). Si tu IP cambia, actualízala y
+# vuelve a hacer terraform apply. Entrar: aws ec2-instance-connect ssh --instance-id <id> --connection-type direct
+# ssh_permitido_desde = ["201.141.31.69/32"]
+
 # Para dejar el servidor encendido siempre:
 # horario_activo = false

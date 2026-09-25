@@ -26,18 +26,30 @@ variable "puertos_publicos" {
   default     = [80, 443]
 }
 
+variable "ssh_permitido_desde" {
+  description = "IPs que pueden entrar por SSH (ej. [\"201.141.31.69/32\"]). Va en terraform.tfvars, no en git. Vacío = cerrado."
+  type        = list(string)
+  default     = []
+}
+
+variable "llave_ssh_archivo" {
+  description = "Ruta de la llave PÚBLICA para SSH (ej. ~/.ssh/matrix-pos.pub). Vacío = sin llave. Cambiarla recrea el servidor."
+  type        = string
+  default     = ""
+}
+
 # ---------------------------------------------------------------- horario (hora de CDMX)
 
 variable "horario_encender" {
-  description = "8:30, de lunes a viernes (la API tarda 1-2 minutos en responder después de encender)"
+  description = "9:00, de lunes a viernes (la API tarda 1-2 minutos en responder después de encender)"
   type        = string
-  default     = "cron(30 8 ? * MON-FRI *)"
+  default     = "cron(0 9 ? * MON-FRI *)"
 }
 
 variable "horario_apagar" {
-  description = "17:30. Todos los días: también apaga lo que se haya encendido a mano en fin de semana."
+  description = "17:00. Todos los días: también apaga lo que se haya encendido a mano en fin de semana."
   type        = string
-  default     = "cron(30 17 ? * * *)"
+  default     = "cron(0 17 ? * * *)"
 }
 
 variable "horario_activo" {

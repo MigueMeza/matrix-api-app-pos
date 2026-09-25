@@ -50,7 +50,8 @@ resource "aws_subnet" "servidor" {
 resource "aws_security_group" "servidor" {
   name        = "${var.nombre}-servidor"
   description = "Trafico web hacia la API. Sin SSH: el acceso es por SSM."
-  vpc_id      = data.aws_vpc.default.id
+  # (la descripción no se cambia: AWS recrearía el security group; SSH se abre con reglas aparte)
+  vpc_id = data.aws_vpc.default.id
 
   tags = {
     Name = "${var.nombre}-servidor"
@@ -66,6 +67,19 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
   ip_protocol       = "tcp"
   from_port         = tonumber(each.value)
   to_port           = tonumber(each.value)
+}
+
+# SSH solo desde las IPs indicadas (nunca abierto a todo internet). La llave es temporal: se envía con
+# EC2 Instance Connect al momento de entrar (aws ec2-instance-connect ssh), así que no hay .pem que cuidar.
+resource "aws_vpc_security_group_ingress_rule" "ssh" {
+  for_each = toset(var.ssh_permitido_desde)
+
+  security_group_id = aws_security_group.servidor.id
+  description       = "SSH desde ${each.value}"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
 }
 
 # Salida libre: descargar imágenes de GHCR, paquetes del sistema, hablar con SSM y S3
@@ -126,12 +140,23 @@ resource "aws_ebs_volume" "datos" {
   }
 }
 
+# Llave pública para SSH (usuario ec2-user). La privada nunca sale de la PC de quien la generó.
+# AWS no permite cambiar la llave de una instancia existente: agregarla o cambiarla recrea el servidor
+# (la base sobrevive: está en el disco de datos).
+resource "aws_key_pair" "servidor" {
+  count = var.llave_ssh_publica == null ? 0 : 1
+
+  key_name   = "${var.nombre}-servidor"
+  public_key = var.llave_ssh_publica
+}
+
 resource "aws_instance" "servidor" {
   ami                    = data.aws_ssm_parameter.ami.insecure_value
   instance_type          = var.tipo_instancia
   subnet_id              = aws_subnet.servidor.id
   vpc_security_group_ids = [aws_security_group.servidor.id]
   iam_instance_profile   = aws_iam_instance_profile.servidor.name
+  key_name               = one(aws_key_pair.servidor[*].key_name)
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     volumen_datos        = replace(aws_ebs_volume.datos.id, "-", "")
@@ -166,6 +191,10 @@ resource "aws_volume_attachment" "datos" {
   device_name = "/dev/sdf"
   volume_id   = aws_ebs_volume.datos.id
   instance_id = aws_instance.servidor.id
+
+  # Si hay que desconectar el disco (al recrear el servidor), primero se apaga la máquina:
+  # MySQL cierra limpio y el disco no se desconecta en pleno uso
+  stop_instance_before_detaching = true
 }
 
 resource "aws_eip" "servidor" {
