@@ -50,7 +50,8 @@ resource "aws_subnet" "servidor" {
 resource "aws_security_group" "servidor" {
   name        = "${var.nombre}-servidor"
   description = "Trafico web hacia la API. Sin SSH: el acceso es por SSM."
-  vpc_id      = data.aws_vpc.default.id
+  # (la descripción no se cambia: AWS recrearía el security group; SSH se abre con reglas aparte)
+  vpc_id = data.aws_vpc.default.id
 
   tags = {
     Name = "${var.nombre}-servidor"
@@ -66,6 +67,19 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
   ip_protocol       = "tcp"
   from_port         = tonumber(each.value)
   to_port           = tonumber(each.value)
+}
+
+# SSH solo desde las IPs indicadas (nunca abierto a todo internet). La llave es temporal: se envía con
+# EC2 Instance Connect al momento de entrar (aws ec2-instance-connect ssh), así que no hay .pem que cuidar.
+resource "aws_vpc_security_group_ingress_rule" "ssh" {
+  for_each = toset(var.ssh_permitido_desde)
+
+  security_group_id = aws_security_group.servidor.id
+  description       = "SSH desde ${each.value}"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
 }
 
 # Salida libre: descargar imágenes de GHCR, paquetes del sistema, hablar con SSM y S3

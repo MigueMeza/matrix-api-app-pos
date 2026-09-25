@@ -36,8 +36,14 @@ variable "etiquetas_disco_datos" {
   default     = {}
 }
 
+variable "ssh_permitido_desde" {
+  description = "IPs (CIDR, ej. 201.141.31.69/32) que pueden entrar por SSH al puerto 22. Vacío = puerto 22 cerrado."
+  type        = list(string)
+  default     = []
+}
+
 variable "puertos_publicos" {
-  description = "Puertos abiertos a internet. Sin 22: el acceso es por SSM."
+  description = "Puertos abiertos a todo internet. El 22 no va aquí: ver ssh_permitido_desde."
   type        = list(number)
   default     = [80, 443]
 }

@@ -1,7 +1,7 @@
 # Infraestructura (Terraform)
 
 Un servidor EC2 en `us-east-1` donde viven la API y MySQL con `docker compose`.
-Costo aproximado con el horario de las tiendas: **~$7 USD/mes** (t4g.micro, L-V 8:30 a 17:30).
+Costo aproximado con el horario de las tiendas: **~$7 USD/mes** (t4g.micro, L-V 9:00 a 17:00).
 
 ## Estructura
 
@@ -53,8 +53,11 @@ Los outputs `instancia_id` y `rol_github_arn` van como **variables** del reposit
 ## Uso diario
 
 - **Encender fuera de horario:** GitHub → Actions → Servidor → Run workflow → `encender`.
-  El horario lo apaga a las 17:30.
+  El horario lo apaga a las 17:00.
 - **Terminal en el servidor:** `terraform output conectarse` (requiere el Session Manager plugin).
+- **SSH:** solo desde las IPs de `ssh_permitido_desde` (en `terraform.tfvars`), con llave temporal de EC2 Instance Connect:
+  `aws ec2-instance-connect ssh --instance-id <instancia_id> --connection-type direct`.
+  Si tu IP cambia (https://checkip.amazonaws.com), actualízala en `terraform.tfvars` y haz `terraform apply`.
 - **Cambios:** edita los `.tf`, `terraform plan`, revisa, `terraform apply`.
 
 > El disco de datos tiene `prevent_destroy`: `terraform destroy` falla a propósito para no borrar la base.

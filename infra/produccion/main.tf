@@ -14,10 +14,11 @@ module "servidor" {
   arquitectura          = var.arquitectura
   disco_datos_gb        = var.disco_datos_gb
   puertos_publicos      = var.puertos_publicos
+  ssh_permitido_desde   = var.ssh_permitido_desde
   etiquetas_disco_datos = module.respaldos.etiqueta_snapshot
 }
 
-# Enciende 8:30 (L-V) y apaga 17:30 (todos los días), hora de CDMX
+# Enciende 9:00 (L-V) y apaga 17:00 (todos los días), hora de CDMX
 module "horario" {
   source = "../modules/horario"
 

@@ -1,7 +1,7 @@
 name: Servidor
 
 # Botón para encender o apagar el servidor fuera del horario automático
-# (Actions → Servidor → Run workflow). Si se enciende a mano, el horario lo apaga a las 17:30.
+# (Actions → Servidor → Run workflow). Si se enciende a mano, el horario lo apaga a las 17:00.
 #
 # Requiere en Settings → Secrets and variables → Actions → Variables:
 #   AWS_ROLE_ARN          = output rol_github_arn de infra/produccion
