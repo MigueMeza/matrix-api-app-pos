@@ -32,6 +32,12 @@ variable "ssh_permitido_desde" {
   default     = []
 }
 
+variable "llave_ssh_archivo" {
+  description = "Ruta de la llave PÚBLICA para SSH (ej. ~/.ssh/matrix-pos.pub). Vacío = sin llave. Cambiarla recrea el servidor."
+  type        = string
+  default     = ""
+}
+
 # ---------------------------------------------------------------- horario (hora de CDMX)
 
 variable "horario_encender" {

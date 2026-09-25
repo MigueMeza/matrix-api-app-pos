@@ -15,6 +15,7 @@ module "servidor" {
   disco_datos_gb        = var.disco_datos_gb
   puertos_publicos      = var.puertos_publicos
   ssh_permitido_desde   = var.ssh_permitido_desde
+  llave_ssh_publica     = var.llave_ssh_archivo == "" ? null : trimspace(file(pathexpand(var.llave_ssh_archivo)))
   etiquetas_disco_datos = module.respaldos.etiqueta_snapshot
 }
 
