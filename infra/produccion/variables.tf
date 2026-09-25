@@ -31,13 +31,13 @@ variable "puertos_publicos" {
 variable "horario_encender" {
   description = "8:30, de lunes a viernes (la API tarda 1-2 minutos en responder después de encender)"
   type        = string
-  default     = "cron(30 8 ? * MON-FRI *)"
+  default     = "cron(0 9 ? * MON-FRI *)"
 }
 
 variable "horario_apagar" {
   description = "17:30. Todos los días: también apaga lo que se haya encendido a mano en fin de semana."
   type        = string
-  default     = "cron(30 17 ? * * *)"
+  default     = "cron(0 17 ? * * *)"
 }
 
 variable "horario_activo" {
